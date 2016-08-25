@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<project name="waterbear_runtime_base" default="run_tests" basedir=".">
+	<tstamp />
+	<property name="base.dir" location="." />
+	<property name="lib.dir" location="${base.dir}/lib" />
+	<property name="etc.dir" location="${base.dir}/etc" />
+	<property name="wdefs.dir" location="${base.dir}/wdefs" />
+	<property name="test.reports" value="${base.dir}/reports" />
+	<property name="classes.dir" value="${base.dir}/classes" />
+	<property name="testng.report.dir" value="${base.dir}/reports" />
+	<loadproperties srcFile="etc/waterbear.properties" />
+
+	<path id="classpath">
+		<pathelement location="${etc.dir}" />
+		<pathelement location="${wdefs.dir}" />
+		<fileset dir="${lib.dir}">
+			<include name="*.jar" />
+		</fileset>
+	</path>
+
+	<taskdef name="testng" classpathref="classpath" classname="org.testng.TestNGAntTask" />
+
+	<target name="run_tests">
+		<delete file="${java.io.tmpdir}/guiauto.tmp" />
+		<testng configFailurePolicy="continue" useDefaultListeners="false" classpathref="classpath" outputDir="${testng.report.dir}" haltOnfailure="false" failureProperty="test.fail">
+			<xmlfileset dir="${base.dir}" includes="${testng.filename}" />
+		</testng>
+	</target>
+
+	<target name="email_result">
+		<property environment="env" />
+		<loadproperties srcFile="${java.io.tmpdir}/guiauto.tmp" />
+		<mail mailhost="na.relay.ibm.com" mailport="25" subject="${report.email.project.name} status: ${test.result}, ${cli.release}(${cli.version}) ,${hardware} + ${browser}" tolist="${report.email.to}">
+			<from address="${report.email.from}" />
+			<message src="reports/emailable-report.html" mimetype="text/html">GUI Automation execution is completed</message>
+		</mail>
+	</target>
+
+</project>

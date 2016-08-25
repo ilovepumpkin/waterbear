@@ -1,0 +1,25 @@
+<browser>
+function collectWidgetIds(node) {
+
+	var widgetIds = [];
+	if (node.className.indexOf('hidden') != -1) {
+		return;
+	}
+	var widgetId = node.getAttribute('widgetid');
+	if (widgetId) {
+		widgetIds.push(widgetId);
+	}
+	var children = node.children;
+	if (children.length > 0) {
+		for (var i = 0; i < children.length; i++) {
+			var cWidgetIds = collectWidgetIds(children[i]);
+			if (cWidgetIds) {
+				widgetIds = widgetIds.concat(cWidgetIds);
+			}
+		}
+	}
+
+	return widgetIds;
+};
+
+</browser>

@@ -1,0 +1,57 @@
+<?xml version="1.0"?>
+<project name="waterbear_core" default="core_deploy" basedir=".">
+	<property name="base.dir" location="." />
+	<property name="classes.dir" location="${base.dir}/classes" />
+	<property name="lib.dir" location="${base.dir}/lib" />
+	<property name="src.dir" location="${base.dir}/src" />
+	<property name="dist.dir" location="${base.dir}/dist" />
+	<property name="dist.lib.dir" location="${dist.dir}/lib" />
+	<property name="wdefs.dir" location="${base.dir}/wdefs" />
+
+	<property name="evo.msg.src.dir" location="${src.dir}/org/waterbear/core/msg" />
+	<property name="evo.msg.classes.dir" location="${classes.dir}/org/waterbear/core/msg" />
+
+	<path id="classpath">
+		<fileset dir="${lib.dir}">
+			<include name="**/*.jar" />
+		</fileset>
+	</path>
+
+	<target name="core_deploy">
+		<antcall target="clean" />
+		<antcall target="compile" />
+	</target>
+
+	<target name="clean">
+		<delete dir="${classes.dir}" />
+		<delete dir="${dist.dir}" />
+	</target>
+
+	<target name="compile">
+		<mkdir dir="${classes.dir}" />
+		<mkdir dir="${dist.lib.dir}" />
+		<javac srcdir="${src.dir}" destdir="${classes.dir}" classpathref="classpath" debug="true">
+			<include name="**/*" />
+		</javac>
+		<copy todir="${classes.dir}">
+			<fileset dir="${wdefs.dir}">
+				<include name="core.wdef" />
+			</fileset>
+		</copy>
+		<copy todir="${evo.msg.classes.dir}" flatten="true">
+			<fileset dir="${evo.msg.src.dir}">
+				<include name="*.properties" />
+			</fileset>
+		</copy>
+		<jar update="true" destfile="${dist.lib.dir}/waterbear_core.jar">
+			<fileset dir="${classes.dir}">
+				<include name="*/**" />
+			</fileset>
+		</jar>
+		<copy todir="${dist.lib.dir}" flatten="true">
+			<fileset dir="${lib.dir}">
+				<include name="*.jar" />
+			</fileset>
+		</copy>
+	</target>
+</project>

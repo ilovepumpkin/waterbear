@@ -1,0 +1,165 @@
+<?xml version="1.0"?>
+<project name="waterbear_common" default="common_deploy" basedir=".">
+	<property name="base.dir" location="." />
+
+	<property name="project.core.dir" location="../../waterbear_svc/waterbear_core" />
+	<property name="core.src.dir" location="${project.core.dir}/src" />
+	<property name="core.lib.dir" location="${project.core.dir}/lib" />
+	<property name="core.dist.lib.dir" location="${project.core.dir}/dist/lib" />
+	<property name="core.wdefs.dir" location="${project.core.dir}/wdefs" />
+
+	<property name="project.common.dir" location="../../waterbear_svc/waterbear_common" />
+	<property name="common.src.dir" location="${project.common.dir}/src" />
+	<property name="common.lib.dir" location="${project.common.dir}/lib" />
+	<property name="common.toolslib.dir" location="${project.common.dir}/toolslib" />
+
+	<property name="testdata.dir" location="${base.dir}/testdata" />
+	<property name="etc.dir" location="${base.dir}/etc" />
+	<property name="wdefs.dir" location="${base.dir}/wdefs" />
+	<property name="src.dir" location="${base.dir}/src" />
+	<property name="dist.dir" location="${base.dir}/dist" />
+	<property name="dist.etc.dir" location="${dist.dir}/etc" />
+	<property name="dist.lib.dir" location="${dist.dir}/lib" />
+	<property name="dist.testdata.dir" location="${dist.dir}/testdata" />
+
+	<property name="tmp.dir" location="${base.dir}/tmp" />
+	<property name="tmp.src.dir" location="${tmp.dir}/src" />
+	<property name="tmp.classes.dir" location="${tmp.dir}/classes" />
+
+	<property name="jarfile.name" value="waterbear_tests.jar" />
+
+	<property name="javadoc.dir" location="${base.dir}/docs/api" />
+
+	<path id="classpath">
+		<fileset dir="${common.lib.dir}">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${common.toolslib.dir}">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${core.dist.lib.dir}">
+			<include name="**/*.jar" />
+		</fileset>
+		<fileset dir="${etc.dir}">
+			<include name="config.properties" />
+			<include name="waterbear.properties" />
+		</fileset>
+	</path>
+
+	<target name="build_core">
+		<ant antfile="${project.core.dir}/build.xml" inheritAll="false" />
+	</target>
+
+	<target name="common_deploy">
+		<antcall target="build_core" />
+		<antcall target="clean" />
+		<antcall target="compile" />
+	</target>
+
+	<target name="clean">
+		<delete dir="${tmp.dir}" />
+		<delete dir="${dist.dir}" />
+	</target>
+
+	<target name="copy_src">
+		<copy todir="${tmp.src.dir}">
+			<fileset dir="${src.dir}">
+				<include name="**/*" />
+			</fileset>
+		</copy>
+		<copy todir="${tmp.src.dir}">
+			<fileset dir="${common.src.dir}">
+				<include name="**/*" />
+			</fileset>
+		</copy>
+	</target>
+
+	<target name="copy_javadoc_src">
+		<antcall target="copy_src" />
+		<copy todir="${tmp.src.dir}">
+			<fileset dir="${core.src.dir}">
+				<include name="**/*" />
+			</fileset>
+		</copy>
+	</target>
+
+	<target name="compile">
+		<mkdir dir="${tmp.dir}" />
+		<mkdir dir="${tmp.src.dir}" />
+		<mkdir dir="${tmp.classes.dir}" />
+		<mkdir dir="${dist.etc.dir}" />
+		<mkdir dir="${dist.lib.dir}" />
+		<mkdir dir="${dist.testdata.dir}" />
+
+		<antcall target="copy_src" />
+		<javac srcdir="${tmp.src.dir}" destdir="${tmp.classes.dir}" classpathref="classpath" debug="true" encoding="utf-8">
+			<include name="**/*" />
+		</javac>
+		<copy todir="${tmp.classes.dir}" filtering="true">
+			<fileset dir="${tmp.src.dir}">
+				<include name="**/*.properties" />
+			</fileset>
+		</copy>
+		<copy todir="${tmp.classes.dir}">
+			<fileset dir="${wdefs.dir}">
+				<include name="project_specific.wdef" />
+			</fileset>
+		</copy>
+		<jar update="true" destfile="${dist.lib.dir}/${jarfile.name}">
+			<fileset dir="${tmp.classes.dir}">
+				<include name="*/**" />
+			</fileset>
+		</jar>
+		<copy todir="${dist.etc.dir}">
+			<fileset dir="${etc.dir}">
+				<include name="config.properties" />
+				<include name="waterbear.properties" />
+				<include name="log4j.properties" />
+			</fileset>
+		</copy>
+		<copy todir="${dist.testdata.dir}">
+			<fileset dir="${testdata.dir}">
+				<include name="**/*" />
+			</fileset>
+		</copy>
+		<copy todir="${dist.dir}">
+			<fileset dir="${etc.dir}">
+				<include name="build.xml" />
+				<include name="testng*.xml" />
+			</fileset>
+		</copy>
+		<copy todir="${dist.dir}">
+			<fileset dir="${project.common.dir}">
+				<include name="build_runtime_base.xml" />
+			</fileset>
+		</copy>
+		<copy todir="${dist.lib.dir}">
+			<fileset dir="${core.dist.lib.dir}">
+				<include name="**/*.jar" />
+			</fileset>
+			<fileset dir="${common.lib.dir}">
+				<include name="*.jar" />
+			</fileset>
+		</copy>
+	</target>
+
+	<target name="base_gen_javadoc">
+		<antcall target="build_core" />
+		<antcall target="clean" />
+		<antcall target="copy_javadoc_src" />
+		<javadoc destdir="${javadoc.dir}" author="true" version="true" use="true" windowtitle="Water Bear API">
+			<packageset dir="${tmp.src.dir}" defaultexcludes="yes">
+				<include name="org/waterbear/core/**" />
+				<include name="org/waterbear/projects/common/**" />
+				<include name="org/waterbear/projects/**/utils/**" />
+				<include name="org/waterbear/projects/**/widgets/**" />
+			</packageset>
+		</javadoc>
+		<copy todir="${javadoc.dir}">
+			<fileset dir="${tmp.src.dir}">
+				<include name="**/*.jpeg" />
+			</fileset>
+		</copy>
+	</target>
+
+</project>

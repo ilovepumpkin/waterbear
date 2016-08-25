@@ -1,0 +1,966 @@
+_include("browser_funcs.sah");
+
+String.prototype.capitalize = function() {
+	return this.replace(/(^|\s)([a-z])/g, function(m, p1, p2) {
+		return p1 + p2.toUpperCase();
+	}).replace(/ /gm, "");
+};
+
+String.prototype.trim = function() {
+	return this.replace(/^\s*/, '').replace(/\s*$/, '');
+};
+
+if ( typeof String.prototype.startsWith != 'function') {
+	String.prototype.startsWith = function(str) {
+		return str.length > 0 && this.substring(0, str.length) === str;
+	};
+};
+
+if ( typeof String.prototype.endsWith != 'function') {
+	String.prototype.endsWith = function(str) {
+		return str.length > 0 && this.substring(this.length - str.length, this.length) === str;
+	};
+};
+
+function $get($el, $attr) {
+	_set($attrValue, $el.getAttribute($attr));
+	return $attrValue;
+};
+
+function $merge($obj1, $obj2) {
+	var $obj3 = {};
+	for ($name in $obj1) {
+		$obj3[$name] = $obj1[$name];
+	}
+	for ($name in $obj2) {
+		$obj3[$name] = $obj2[$name];
+	}
+	return $obj3;
+};
+
+function $getElementHTML($elem) {
+	if (_isFF()) {
+		if ( typeof $elem === 'string')
+			$elem = document.getElementById($elem);
+		var $div = document.createElement('div');
+		$div.appendChild($elem.cloneNode(true));
+		return $div.innerHTML;
+	} else {
+		return $elem.outerHTML;
+	}
+};
+
+var WDefRegistry = function() {
+	var $reg = {};
+	var $jsFuncCustomizations = {};
+	var $tmpSahiFuncs = {};
+
+	return {
+		init : function($paths, $projectJSFuncCustomizations) {
+			if ($projectJSFuncCustomizations) {
+				$jsFuncCustomizations = $merge($coreJSFuncCustomizations, $projectJSFuncCustomizations);
+			} else {
+				$jsFuncCustomizations = $coreJSFuncCustomizations;
+			}
+			for (var $i = 0; $i < $paths.length; $i++) {
+				var $path = $paths[$i];
+				this._parse($path);
+			}
+		},
+
+		get : function($prefix) {
+			if (!$reg[$prefix]) {
+				_log($prefix + " is not found in the WDefRegistry!!", "custom1");
+			} else {
+				return $reg[$prefix]
+			}
+		},
+		_parse : function($path) {
+			var $content = _readFile($path);
+			var $lines = $content.split("\n");
+			for ( i = 0; i < $lines.length; i++) {
+				var $line = $lines[i];
+				if ($line.trim().length > 0 && !$line.startsWith("#")) {
+					$line = $line.replace("\r", "");
+					var $parts = $line.split("=");
+					var $className = $parts[0].trim();
+					var $classShortName = $className.substr($className.lastIndexOf(".") + 1);
+					var $rightPart = $parts[1];
+					var $sahiFunc;
+
+					if ($rightPart.indexOf("|") == -1) {
+						var $prefixes = $rightPart.split(",");
+						$sahiFunc = $tmpSahiFuncs[$className];
+					} else {
+						$parts = $rightPart.split("|");
+						$sahiFunc = "_" + $parts[0];
+						var $prefixes = $parts[3].split(",");
+						$tmpSahiFuncs[$className] = $sahiFunc;
+					}
+
+					$prefixes.forEach(function($prefix) {
+						var $jsFunc = "Widget";
+						var $customizedJSFunc = $jsFuncCustomizations[$className];
+						if ($customizedJSFunc) {
+							$jsFunc = $customizedJSFunc["jsFunc"];
+						}
+						$reg[$prefix] = {
+							"className" : $className,
+							"jsFunc" : $jsFunc,
+							"sahiFunc" : $sahiFunc
+						};
+					});
+				}
+			}
+		}
+	}
+}();
+
+var $Messages = function() {
+	var $msgCache = new Array();
+	var gEnabled = false;
+
+	return {
+		load : function($bundles) {
+			for (var j = 0; j < $bundles.length; j++) {
+				var $bundle = $bundles[j];
+				var $bName = $bundle["bundleName"];
+				var $bPath = $bundle["bundlePath"];
+				var $bFiles = $bundle["bundleFiles"];
+				for (var i = 0; i < $bFiles.length; i++) {
+					var $fileName = $bFiles[i];
+					var $filePath = $bPath + $fileName + ".properties";
+					var $content = _readFile($filePath);
+					if ($content == null) {
+						_log("Cannot load content from " + $filePath, "error");
+					}
+					$msgCache.push([$bName, $fileName, $content]);
+				}
+			}
+		},
+
+		enableG : function(enabled) {
+			gEnabled = enabled;
+		},
+
+		isGEnabled : function() {
+			return gEnabled;
+		},
+
+		convert : function(propValue) {
+			var rt;
+			if (gEnabled) {
+				var res = this.findMessageKey(propValue);
+				if (res) {
+					rt = 'Bundles.getString(' + res.bundleName + '.' + res.resName + ', "' + res.propKey + '")';
+				}
+			}
+			return rt ? rt : '"' + propValue + '"';
+		},
+
+		findMessageKey : function($propValue) {
+			if ($propValue) {
+				$propValue = $propValue.trim();
+			}
+			if ($propValue.length == 0) {
+				return null;
+			}
+			$propValue = $propValue.split("?")[0];
+			$propValue = $propValue.replace(/\(/gm, "\\(");
+			$propValue = $propValue.replace(/\)/gm, "\\)");
+			$propValue = $propValue.trim();
+			var $re = new RegExp("(.*)=" + $propValue + "$", "gm");
+			var $key = "";
+			var $resname = "";
+			var $bundleName = "";
+			for (var i = 0; i < $msgCache.length; i++) {
+				$bundleName = $msgCache[i][0];
+				var $fileName = $msgCache[i][1];
+				var $content = $msgCache[i][2];
+				var $m = $re.exec($content);
+				if ($m != null) {
+					$key = $m[1];
+					$resname = $fileName;
+					break;
+				}
+			}
+			if ($key == "") {
+				_log("Cannot find the property key for [" + $propValue + "]", "custom1");
+				// throw ERROR_PROPERTY_KEY_NOT_FOUND;
+			}
+
+			return {
+				"bundleName" : $bundleName,
+				"resName" : $resname,
+				"propKey" : $key
+			};
+		}
+	}
+}();
+
+var $Templates = function() {
+	var template_dir;
+	return {
+		init : function(t_dir) {
+			template_dir = t_dir;
+		},
+		loadTemplate : function(moduleName, templateName) {
+			var path = template_dir + moduleName + "/" + templateName + ".template";
+			return _readFile(path);
+		}
+	};
+}();
+
+function NavTasksCodeGen() {
+	this.strings = [];
+	this.gotoPageMethods = [];
+	this.gotoSubpageMethods = [];
+
+	this.$stringTemplate = $Templates.loadTemplate("navtasks", "resbundle");
+	this.$pageMethodTemplate = $Templates.loadTemplate("navtasks", "pageMethod");
+	this.$subpageMethodTemplate = $Templates.loadTemplate("navtasks", "subpageMethod");
+};
+
+NavTasksCodeGen.prototype.convert = function($text) {
+	var $gStr = $Messages.convert($text);
+	var $varName = this.formResName($text);
+	return this.$stringTemplate.replace("{text}", $gStr).replace("{varName}", $varName);
+};
+
+NavTasksCodeGen.prototype.formResName = function($text) {
+	return $text.toUpperCase().replace(/[\s\/]/g, "_");
+};
+
+NavTasksCodeGen.prototype.printout = function($methods) {
+	var $methodStr = "";
+	for (var j = 0; j < $methods.length; j++) {
+		var $method = $methods[j];
+		$methodStr = $methodStr + $method;
+	}
+	_log("<pre>" + $methodStr + "</pre>", "custom5");
+};
+
+NavTasksCodeGen.prototype.gen = function() {
+	var $flyouts = _collect("_div", "flyout sprite");
+	for ( i = 0; i < $flyouts.length; i++) {
+		var $flyout = $flyouts[i];
+		var $level1Text = _getText(_div(0, _in($flyout)));
+		this.strings.push(this.convert($level1Text));
+
+		var $menuitems = _collect("_link", "menuitem", _in($flyout));
+		for ( j = 0; j < $menuitems.length; j++) {
+			var $level2Text = _getText($menuitems[j]);
+			this.strings.push(this.convert($level2Text));
+
+			var $pageName = $level2Text.capitalize();
+			var $gotoPageMethod = this.$pageMethodTemplate.replace("{pageName}", $pageName).replace("{level1Text}", this.formResName($level1Text)).replace("{level2Text}", this.formResName($level2Text));
+			this.gotoPageMethods.push($gotoPageMethod);
+		}
+	}
+
+	// handle subpages
+	var $subnavs = _collect("_div", "/evo_layout_FilteringRepeater_.*/");
+	for ( i = 0; i < $subnavs.length; i++) {
+		var $subnav = _parentNode($subnavs[i]);
+		var $level2Text = _getText(_heading3(0, _in($subnav)));
+		var $level3s = _collect("_div", "h3 lightBlack", _in($subnav));
+		for ( j = 0; j < $level3s.length; j++) {
+			var $level3Text = _getText($level3s[j]);
+			this.strings.push(this.convert($level3Text));
+
+			var $pageName = $level2Text.capitalize();
+			var $subPageName = $level3Text.capitalize();
+			var $gotoSubPageMethod = this.$subpageMethodTemplate.replace("{subpageName}", $subPageName).replace("{pageName}", $pageName).replace("{level2Text}", this.formResName($level2Text)).replace("{level3Text}", this.formResName($level3Text));
+			this.gotoSubpageMethods.push($gotoSubPageMethod);
+		}
+	}
+
+	this.printout(this.strings.concat(this.gotoPageMethods).concat(this.gotoSubpageMethods));
+};
+
+function AppObjsCodeGen() {
+	excludedWidgets = ["org.waterbear.core.widgets.evo.EvoGridToolbar", "org.waterbear.core.widgets.evo.EvoHelpTip", "org.waterbear.core.widgets.dijit.SearchableFilter", "org.waterbear.core.widgets.evo.EvoFilteringRepeater", "org.waterbear.core.widgets.evo.IconNavRepeaterItem"];
+
+	logErrorWidgets = function($isDialog, $name, errorWidgets) {
+		var $str = "";
+		errorWidgets.forEach(function(s) {
+			$str = $str + s + "\n";
+		});
+		if ($str != "") {
+			var $msg;
+			if ($isDialog == true) {
+				$msg = "[Dialog: " + $name + "]";
+			} else {
+				$msg = "[Page: " + $name + "]";
+			}
+			_log($msg + " The code for the following widgets were not generated successfully: \n" + $str, "error");
+		}
+		errorWidgets = [];
+	};
+
+	logMissedWidgets = function($isDialog, name, missedWidgets) {
+		var $str = "";
+		missedWidgets.forEach(function(s) {
+			$str = $str + s + "\n";
+		});
+		if ($str != "") {
+			var $msg;
+			if ($isDialog == true) {
+				$msg = "[Dialog: " + name + "]";
+			} else {
+				$msg = "[Page: " + name + "]";
+			}
+			_log($msg + " The following widgets are not defined: \n" + $str, "error");
+		}
+		missedWidgets = [];
+	};
+
+};
+
+AppObjsCodeGen.prototype.gen = function() {
+	var $clazzes = new Array();
+	// _log("The widget types to be generated:"+$genWidgets,"info");
+
+	$clazzes = this.formDialogMethods();
+	var $pageMethods = this.formPageMethods();
+	$clazzes = $clazzes.concat($pageMethods);
+
+	this.logClazzes($clazzes);
+
+	// return this.prepareSaveAsFile($clazzes);
+};
+
+AppObjsCodeGen.prototype.findDialogs = function() {
+	var $dlgTitleBars = _collect("_div", "dijitDialogTitleBar");
+	var $dlgs = [];
+	$dlgTitleBars.forEach(function(d) {
+		$dlgs.push(_parentNode(d));
+	});
+	return $dlgs;
+};
+
+AppObjsCodeGen.prototype.findWidgets = function($re, $sahiFuncName, $inElem) {
+	var $widgets = [];
+	var $els = [];
+	if ($inElem) {
+		$els = _collect($sahiFuncName, $re, _in($inElem));
+	} else {
+		$els = _collect($sahiFuncName, $re);
+	}
+	for (var $i = 0; $i < $els.length; $i++) {
+		var $widget = $els[$i];
+		var $wid = $get($widget, "widgetid");
+		if ($wid) {
+			$widgets.push($widget);
+		}
+	}
+	return $widgets;
+};
+
+AppObjsCodeGen.prototype.formDialogMethods = function() {
+	var $clazzes = new Array();
+	var $dlgs = this.findDialogs();
+	for (var $i = 0; $i < $dlgs.length; $i++) {
+		var $dlg = $dlgs[$i];
+		var $dlgTitle = _getText(_span("dijitDialogTitle", _in($dlg)));
+		var missedWidgets = [];
+		var $dlgMethods = this.formMethods($dlg, true, missedWidgets);
+		if ($dlgMethods.length > 0) {
+			var $clazz = new AppobjClass($dlgTitle, $dlgMethods, true);
+			$clazz.missed = missedWidgets;
+			$clazzes.push($clazz);
+		}
+	}
+
+	return $clazzes;
+};
+
+AppObjsCodeGen.prototype.formPageMethods = function() {
+	alert("This method needs to be overwritten because different projects have different ways to form page methods.");
+};
+
+AppObjsCodeGen.prototype.formResourceMethods = function() {
+	/*
+	 * MenuItem
+	 */
+	var $menuItemTemplate = $Templates.loadTemplate("appobjs", "getMenuItem");
+	var $methods = [];
+	var nodes = this.findWidgets(/^dijit_MenuItem_\d*/, "_row");
+	for (var n = 0; n < nodes.length; n++) {
+		var $node = nodes[n];
+		var $labelid = $get($node, "widgetid") + "_text";
+		var $menuitemLabel = _byId($labelid, _in($node));
+		var $text = _getText($menuitemLabel);
+
+		if ($text && $text.trim() != "") {
+			var $convertedText = $Messages.convert($text);
+			var $method = $menuItemTemplate.replace("{menuItemText}", $text.capitalize()).replace("{text}", $convertedText);
+			if ($methods.indexOf($method) == -1) {
+				$methods.push($method);
+			}
+		}
+	}
+
+	$methods = $methods.concat(this.hookFormResourceMethods());
+
+	return $methods;
+};
+
+AppObjsCodeGen.prototype.hookFormResourceMethods = function() {
+	// do nothing by default
+	return [];
+};
+
+AppObjsCodeGen.prototype.formMethods = function($cxt, $isInDlg, missedWidgets) {
+	var $methods = [];
+	var $counter = {};
+
+	_set($widgetIds, collectWidgetIds($cxt));
+
+	// Exclude the root widgets because it is the container widget itself.
+	for (var i = 1; i < $widgetIds.length; i++) {
+		var $widgetId = $widgetIds[i];
+		var $prefix;
+		if ($widgetId.indexOf("_") != -1) {
+			$prefix = $widgetId.substr(0, $widgetId.lastIndexOf("_"));
+		}
+
+		var $wRegEntry = WDefRegistry.get($prefix);
+		if (!$wRegEntry) {
+			missedWidgets.push($widgetId);
+			continue;
+		}
+
+		var $className = $wRegEntry["className"];
+
+		// excluded some widgets
+		if (excludedWidgets.indexOf($className) != -1) {
+			continue;
+		}
+
+		var $jsFunc = $wRegEntry["jsFunc"];
+		var $sahiFunc = $wRegEntry["sahiFunc"];
+
+		// retrieve the dom node for the widget
+		var $node = _sahi._accessor("_sahi." + $sahiFunc + "({widgetid:'" + $widgetId + "'})");
+
+		// test if the widget is really a Password widget - the prefixes of
+		// Textbox and Password are overlapped
+		if ($className == "org.waterbear.core.widgets.dijit.Password") {
+			if (!_exists(_password(0, _in($node)))) {
+				$jsFunc = "Textbox";
+				$className = "org.waterbear.core.widgets.dijit.Textbox";
+			}
+		}
+
+		// caculate the index of the widget
+		var $index = $counter[$className];
+		if ( $className in $counter) {++$index;
+		} else {
+			$index = 0;
+		}
+		$counter[$className] = $index;
+
+		//if (_isVisible($node)) {
+		var $widget = eval("new " + $jsFunc + "($node,$isInDlg,$index)");
+		if ($widget) {
+			$widget.javaClassName = $className;
+			$widget.widgetId = $widgetId;
+			$methods.push($widget);
+		}
+		//} else {
+		//	var $widgetid = $get($node, "widgetid");
+		//	_log($widgetid + " is invisible so ignore it", "custom1");
+		//}
+	}
+
+	return $methods;
+};
+
+AppObjsCodeGen.prototype.logClazzes = function($clazzes) {
+	for (var i = 0; i < $clazzes.length; i++) {
+		var $clazz = $clazzes[i];
+		_log("<pre>" + $clazz.getDeclaration() + "\n</pre>", "custom5");
+		logErrorWidgets($clazz.isDialog, $clazz.title, $clazz.errors);
+		logMissedWidgets($clazz.isDialog, $clazz.title, $clazz.missed);
+	}
+};
+
+AppObjsCodeGen.prototype.prepareSaveAsFile = function($clazzes) {
+	var $files = new Array();
+
+	for (var i = 0; i < $clazzes.length; i++) {
+		var $clazz = $clazzes[i];
+		var $fileName = $clazz.getClassName() + ".java";
+		$files.push([$fileName, $clazz.getDeclaration()]);
+	}
+
+	return $files; errors
+};
+
+function AppobjClass($theClassName, $theMethods, $theIsDialog, $pageId) {
+	// this.className=className.replace(/\$dlgTitles/g,"");
+	var $className = $theClassName.capitalize().replace("▼", "");
+	var $methods = $theMethods;
+	var $isDialog = $theIsDialog;
+	var $pageTemplate = $Templates.loadTemplate("appobjs", "pageAppObjs");
+	var $dlgTemplate = $Templates.loadTemplate("appobjs", "dialogAppObjs");
+	var $dlgTitle = $theClassName;
+	var $errorWidgets = [];
+	var $missedWidgets = [];
+
+	this.__defineGetter__('title', function() {
+		return $dlgTitle
+	});
+	this.__defineGetter__('isDialog', function() {
+		return $isDialog
+	});
+	this.__defineGetter__('errors', function() {
+		return $errorWidgets
+	});
+	this.__defineGetter__('missed', function() {
+		return $missedWidgets
+	});
+	this.__defineSetter__('missed', function(missedWidgets) {
+		$missedWidgets = missedWidgets
+	});
+
+	this.getDeclaration = function() {
+		var $methodDeclarations = formMethodsStr($methods);
+		var $importsStr = formImportsStr($methods);
+
+		var $template;
+		if ($isDialog) {
+			$template = $dlgTemplate;
+		} else {
+			$template = $pageTemplate;
+		}
+
+		var $rtValue = $template.replace("{className}", this.getClassName()).replace("{methods}", $methodDeclarations);
+
+		if (!$isDialog) {
+			var $locateSelfBody = "return webElem(\"{pageId}\",ET.DIV);".replace("{pageId}", $pageId);
+			$rtValue = $rtValue.replace("{locateSelfBody}", $locateSelfBody);
+			$importsStr = "import org.waterbear.projects.common.appobjs.BaseAppobjs;\nimport org.waterbear.core.widgets.WebElement;\nimport org.waterbear.core.widgets.ET;\n" + $importsStr;
+		} else {
+			var $text = $Messages.convert($dlgTitle);
+			$rtValue = $rtValue.replace("{text}", $text);
+			$importsStr = "import org.waterbear.projects.common.appobjs.DialogAppobjs;\nimport org.waterbear.core.widgets.evo.EvoDialog;\n" + $importsStr;
+		}
+
+		$rtValue = $rtValue.replace("{imports}", $importsStr);
+
+		return $rtValue;
+	};
+
+	var formMethodsStr = function($widgets) {
+		var $methodStr = "";
+		for (var i = 0; i < $widgets.length; i++) {
+			var $widget = $widgets[i];
+			var $method;
+			if ( typeof ($widget) == "string") {
+				$method = $widget;
+			} else {
+				$method = $widget.getMethod();
+			}
+			if (!$method) {
+				$errorWidgets.push($widget.widgetId);
+				continue;
+			}
+			$methodStr = $methodStr + $method + "\n";
+		}
+		return $methodStr;
+	};
+
+	var formImportsStr = function($widgets) {
+		var $importStr = "";
+		var $names = [];
+
+		$widgets.forEach(function(w) {
+			var name = w.javaClassName;
+			if (name && $names.indexOf(name) == -1) {
+				$names.push(name);
+			}
+		});
+		for (var i = 0; i < $names.length; i++) {
+			var $import = "import " + $names[i] + ";";
+			$importStr = $importStr + $import + "\n";
+		}
+		return $importStr;
+	};
+
+	this.getClassName = function() {
+		if ($isDialog) {
+			return $className + "Dialog";
+		} else {
+			return $className + "Page";
+		}
+	};
+}
+
+function Widget($domNode, $isInDlg, $widIndex) {
+	this.$methodTemplate = $Templates.loadTemplate("appobjs", "getWidget");
+	this.$domNode = $domNode;
+	this.$isInDlg = $isInDlg;
+	this.$widIndex = $widIndex;
+	this.javaClassName
+	this.widgetId
+
+	this._shortJavaClassName = function() {
+		return this.javaClassName.substr(this.javaClassName.lastIndexOf(".") + 1);
+	};
+
+	this._methodName = function() {
+		var idKey = this._idKeyValue()[0];
+		var text = this._idKeyValue()[1];
+		text = text.split(":")[0];
+		text = text.split("?")[0];
+		text = text.replace(/[\)|\(|'|\.|-]/gm, "").replace("►", "").replace("◄", "");
+
+		if (idKey == "index") {
+			text = this._shortJavaClassName() + "_" + text;
+		}
+
+		text = text.capitalize();
+		text = text[0].toLowerCase() + text.substr(1, text.length);
+		return text;
+	};
+
+	this._findMethodName = function() {
+		var idKey = this._idKeyValue()[0];
+		var findMethodName = "Unknown";
+		if (idKey == "label") {
+			findMethodName = "byLabel";
+		} else if (idKey == "id" || idKey == "name" || idKey == "value") {
+			findMethodName = "byAttribute";
+		} else if (idKey == "index") {
+			findMethodName = "byIndex";
+		}
+		return findMethodName;
+	};
+
+	this._methodParams = function() {
+		/*
+		 * if(this.paramType!=""){ return this.paramType+" initValue"; }else{
+		 * return ""; }
+		 */
+		return "";
+	};
+
+	this._findMethodParams = function(idKey, idValue) {
+		var keyValue = this._idKeyValue();
+		var idKey = keyValue[0];
+		var idValue = keyValue[1];
+
+		if (idKey == "index") {
+			var findMethodParams = idValue;
+		} else if (idKey == "label") {
+			var labelValue = idValue;
+			if (labelValue.indexOf(" ?") != -1) {
+				labelValue = labelValue.substr(0, labelValue.indexOf(" ?"));
+			}
+			labelValue = labelValue.replace("◄", "").replace("►", "");
+			var findMethodParams = "\"" + labelValue.trim() + "\"";
+		} else {
+			var findMethodParams = "\"" + idValue + "\"";
+		}
+
+		if ($Messages.isGEnabled() && idKey == "label" && idValue != "..." && idValue && idValue.trim().length > 0) {
+			findMethodParams = $Messages.convert(idValue);
+		}
+
+		findMethodParams = findMethodParams + "," + this._shortJavaClassName() + ".class";
+
+		findMethodParams = findMethodParams + ",self()";
+
+		/*
+		 * if(this.paramType!=""){
+		 * findMethodParams=findMethodParams+",initValue"; }
+		 */
+
+		return findMethodParams;
+	};
+
+	this._escape = function(html) {
+		return html.replace(new RegExp("<", "gm"), "&lt;").replace(new RegExp(">", "gm"), "&gt;");
+	};
+
+	this._idKeyValue = function() {
+		var idKey = this.identifier.split("=")[0];
+		var idValue = this.identifier.split("=")[1];
+		return [idKey, idValue];
+	};
+
+	this.getMethod = function() {
+		// _log(this._escape(this.domNode.outerHTML),"custom1");
+
+		this.identifier = this._getIdentifier();
+		// _log("identifier="+this.identifier,"info");
+		if (!this.identifier || this.identifier.substr(-1) == "=") {
+			// _log("Failed to guess the method for
+			// "+this._escape(this._outerHTML(domNode)),"error");
+			return;
+		}
+		var widgetName = this._shortJavaClassName();
+		// _log("widgetName="+widgetName,"info");
+		var methodName = this._methodName();
+		// _log("methodName="+methodName,"info");
+		var findMethodName = this._findMethodName();
+		// _log("findMethodName="+findMethodName,"info");
+		var findMethodParams = this._findMethodParams();
+		// _log("findMethodParams="+findMethodParams,"info");
+
+		return this.$methodTemplate.replace("{widgetName}", widgetName).replace("{methodName}", methodName).replace("{findMethodName}", findMethodName).replace("{findMethodParams}", findMethodParams);
+	};
+
+	this.guessInLabel = function($elem) {
+		var labelText = _getText(_parentNode($elem));
+		if (labelText && labelText != "") {
+			return "label=" + labelText;
+		}
+	};
+
+	this.guessByName = function($elem) {
+		if (!$elem) {
+			return null;
+		}
+		var $wid = $get($elem, "widgetid");
+		var $innerEl = _byId($wid, _in($elem));
+
+		if ($innerEl) {
+			var $attrVal = $get($innerEl, "name");
+			if ($attrVal) {
+				return "name=" + $attrVal;
+			}
+		}
+	};
+
+	this.guessByIndex = function($elem) {
+		if (!$elem) {
+			return null;
+		}
+
+		return "index=" + this.$widIndex;
+	};
+
+	this.guessById = function($elem) {
+		if (!$elem) {
+			return null;
+		}
+
+		var $wid = $get($elem, "widgetid");
+		var $innerEl = _byId($wid, _in($elem));
+
+		if ($innerEl) {
+			var $attrVal = $get($innerEl, "id");
+			if ($attrVal) {
+				return "id=" + $attrVal;
+			}
+		}
+	};
+
+	this.guessByValue = function($elem) {
+		if (!$elem) {
+			return null;
+		}
+
+		var $wid = $get($elem, "widgetid");
+		var $innerEl = _byId($wid, _in($elem));
+
+		if ($innerEl) {
+			var $attrVal = $get($innerEl, "value");
+			if ($attrVal) {
+				return "value=" + $attrVal;
+			}
+		}
+	};
+
+	this.guessByLabel = function($elem) {
+		/*
+		 * This method mainly works for SVC
+		 */
+		var labelElem = $elem.previousSibling;
+		if (!labelElem) {
+			return null;
+		}
+		labelElem = labelElem.previousSibling;
+		if (labelElem && (labelElem.tagName == "DIV" || labelElem.tagName == "SPAN")) {
+			var labelText = _getText(labelElem);
+			return "label=" + labelText;
+		}
+
+		/*
+		 * This method mainly works for SONAS/IFS
+		 */
+		var $labelDiv = _div("/.*label.*/", _near($elem));
+		if (_exists($labelDiv)) {
+			var $labelText = _getText($labelDiv);
+			if ($labelText && $labelText != "") {
+				return "label=" + $labelText;
+			}
+		}
+	};
+
+	this.guess = function($elem, userGuessFuncs) {
+		var guessFuncs = userGuessFuncs;
+		if (!guessFuncs) {
+			guessFuncs = [this.guessByName, this.guessByLabel, this.guessByIndex, this.guessById];
+		}
+		for (var i = 0; i < guessFuncs.length; i++) {
+			var $guessFunc = guessFuncs[i];
+			// rt=guessFunc($elem)
+			rt = $guessFunc.call(this, $elem);
+			if (rt) {
+				return rt;
+			}
+		}
+	};
+
+	this._getIdentifier = function() {
+		return this.guess(this.$domNode);
+	};
+}
+
+function Button($domNode, $isInDlg, $widIndex) {
+	Widget.call(this, $domNode, $isInDlg, $widIndex);
+	this._getIdentifier = function() {
+		var labelSpan = _span($get(this.$domNode, "widgetid") + "_label", _in(this.$domNode));
+		var text = _getText(labelSpan);
+		if (text.trim().length > 0) {
+			return "label=" + text;
+		} else {
+			return null;
+		}
+	};
+}
+
+function DropDownButton($domNode, $isInDlg, $widIndex) {
+	Button.call(this, $domNode, $isInDlg, $widIndex);
+}
+
+function ToggleButton($domNode, $isInDlg, $widIndex) {
+	Button.call(this, $domNode, $isInDlg, $widIndex);
+}
+
+function Textbox($domNode, $isInDlg, $widIndex) {
+	Widget.call(this, $domNode, $isInDlg, $widIndex);
+	this._getIdentifier = function() {
+		if (_exists(_textbox("dijitReset dijitInputInner", _in(this.$domNode)))) {
+			return this.guess(this.$domNode);
+		}
+	};
+}
+
+function NumberTextbox($domNode, $isInDlg, $widIndex) {
+	Widget.call(this, $domNode, $isInDlg, $widIndex);
+	this._getIdentifier = function() {
+		var $h = _hidden(0, _in(this.$domNode));
+		if (_exists($h)) {
+			var $nameVal = $get($h, "name");
+			if ($nameVal) {
+				return "name=" + $nameVal;
+			} else {
+				return this.guess(this.$domNode);
+			}
+		}
+	};
+}
+
+function Password($domNode, $isInDlg, $widIndex) {
+	Widget.call(this, $domNode, $isInDlg, $widIndex);
+	this._getIdentifier = function() {
+		if (_exists(_password("dijitReset dijitInputInner", _in(this.$domNode)))) {
+			return this.guess(this.$domNode);
+		}
+	};
+}
+
+function Checkbox($domNode, $isInDlg, $widIndex) {
+	Widget.call(this, $domNode, $isInDlg, $widIndex);
+	this._getIdentifier = function() {
+		return this.guess(this.$domNode, [this.guessByName, this.guessInLabel]);
+	};
+}
+
+function AccordionContainer($domNode, $isInDlg, $widIndex) {
+	Widget.call(this, $domNode, $isInDlg, $widIndex);
+	this._getIdentifier = function() {
+		return this.guess(this.$domNode, [this.guessByIndex]);
+	};
+}
+
+function RadioButton($domNode, $isInDlg, $widIndex) {
+	Widget.call(this, $domNode, $isInDlg, $widIndex);
+	this._getIdentifier = function() {
+		return this.guess(this.$domNode, [this.guessByValue]);
+	};
+}
+
+function SearchableFilter($domNode, $isInDlg, $widIndex) {
+	Widget.call(this, $domNode, $isInDlg, $widIndex);
+	this._getIdentifier = function() {
+		var $heading3 = _heading3(0, _in(this.$domNode));
+		if (_exists($heading3)) {
+			return "label=" + _getText($heading3);
+		}
+	};
+}
+
+function NumberSpinner($domNode, $isInDlg, $widIndex) {
+	Widget.call(this, $domNode, $isInDlg, $widIndex);
+	this.guessByName = function($elem) {
+		if (!$elem) {
+			return null;
+		}
+		var $wid = $get($elem, "widgetid");
+		var $innerEl = _hidden(0, _in($elem));
+
+		if ($innerEl) {
+			var $attrVal = $get($innerEl, "name");
+			if ($attrVal) {
+				return "name=" + $attrVal;
+			}
+		}
+	};
+}
+
+/*
+ * By default, jsFunc is "Widget" and paramType is "String" if they are not
+ * specified.
+ */
+var $coreJSFuncCustomizations = {
+	"org.waterbear.core.widgets.dijit.NumberSpinner" : {
+		jsFunc : "NumberSpinner"
+	},
+	"org.waterbear.core.widgets.dijit.Textbox" : {
+		jsFunc : "Textbox"
+	},
+	"org.waterbear.core.widgets.dijit.NumberTextbox" : {
+		jsFunc : "NumberTextbox"
+	},
+	"org.waterbear.core.widgets.dijit.Checkbox" : {
+		jsFunc : "Checkbox"
+	},
+	"org.waterbear.core.widgets.dijit.Button" : {
+		jsFunc : "Button"
+	},
+	"org.waterbear.core.widgets.dijit.DropDownButton" : {
+		jsFunc : "DropDownButton"
+	},
+	"org.waterbear.core.widgets.dijit.Password" : {
+		jsFunc : "Password"
+	},
+	"org.waterbear.core.widgets.dijit.SearchableFilter" : {
+		jsFunc : "SearchableFilter"
+	},
+	"org.waterbear.core.widgets.dijit.RadioButton" : {
+		jsFunc : "RadioButton"
+	},
+	"org.waterbear.core.widgets.dijit.ToggleButton" : {
+		jsFunc : "ToggleButton"
+	},
+	"org.waterbear.core.widgets.dijit.AccordionContainer" : {
+		jsFunc : "AccordionContainer"
+	}
+};
+
